@@ -6,10 +6,17 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const XLSX = require('xlsx');
-const path = require('path');
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 🔐 Razorpay Test Keys (yours)
+const razorpay = new Razorpay({
+  key_id: 'rzp_test_Sr6tfbGNPitjbs',
+  key_secret: 'dX9cO3WcKwVwUAuEiHkZ3zvy'
+});
 
 // Security middleware
 app.use(helmet());
@@ -27,9 +34,7 @@ app.use('/api/', limiter);
 // Database setup
 const db = new sqlite3.Database('./database.db');
 
-// Create tables
 db.serialize(() => {
-  // Users table
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -42,7 +47,6 @@ db.serialize(() => {
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   
-  // Estimates table
   db.run(`CREATE TABLE IF NOT EXISTS estimates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId INTEGER,
@@ -59,16 +63,6 @@ db.serialize(() => {
     FOREIGN KEY(userId) REFERENCES users(id)
   )`);
   
-  // Exit surveys table
-  db.run(`CREATE TABLE IF NOT EXISTS exit_surveys (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId INTEGER,
-    reason TEXT,
-    feedback TEXT,
-    paymentFailed INTEGER,
-    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-  
   // Insert default admin if not exists
   db.get(`SELECT * FROM users WHERE email = 'admin@estimate.com'`, (err, row) => {
     if (!row) {
@@ -79,15 +73,13 @@ db.serialize(() => {
   });
 });
 
-// JWT Secret
 const JWT_SECRET = 'your-secret-key-change-this-in-production';
 
-// Middleware to verify token
+// Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access denied' });
-  
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
     req.user = user;
@@ -103,7 +95,6 @@ app.post('/api/register', async (req, res) => {
   if (!name || (!email && !mobile) || !password) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
-  
   const hashedPassword = bcrypt.hashSync(password, 10);
   db.run(`INSERT INTO users (name, email, mobile, password) VALUES (?, ?, ?, ?)`,
     [name, email || null, mobile || null, hashedPassword],
@@ -139,29 +130,48 @@ app.post('/api/estimate', authenticateToken, (req, res) => {
     [req.user.id, clientName, address, landmark, lengthFt, widthFt, noOfFloors, ratePerSqft, totalAmount, builtUpArea],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
-      // Increment estimate count
       db.run(`UPDATE users SET estimateCount = estimateCount + 1 WHERE id = ?`, [req.user.id]);
       res.json({ success: true, estimateId: this.lastID });
     });
 });
 
-// Update payment status
-app.post('/api/payment-success', authenticateToken, (req, res) => {
-  db.run(`UPDATE users SET hasPaid = 1 WHERE id = ?`, [req.user.id], (err) => {
-    res.json({ success: true });
-  });
+// 🚀 Create Razorpay order
+app.post('/api/create-order', authenticateToken, async (req, res) => {
+  try {
+    const options = {
+      amount: 19900, // ₹199 in paise
+      currency: 'INR',
+      receipt: `receipt_${req.user.id}_${Date.now()}`,
+      payment_capture: 1
+    };
+    const order = await razorpay.orders.create(options);
+    res.json({ orderId: order.id, amount: order.amount, currency: order.currency });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to create order' });
+  }
 });
 
-// Save exit survey
-app.post('/api/exit-survey', authenticateToken, (req, res) => {
-  const { reason, feedback, paymentFailed } = req.body;
-  db.run(`INSERT INTO exit_surveys (userId, reason, feedback, paymentFailed) VALUES (?, ?, ?, ?)`,
-    [req.user.id, reason, feedback, paymentFailed ? 1 : 0], (err) => {
-      res.json({ success: true });
+// ✅ Verify payment and mark user as paid
+app.post('/api/verify-payment', authenticateToken, async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+  const body = razorpay_order_id + '|' + razorpay_payment_id;
+  const expectedSignature = crypto
+    .createHmac('sha256', razorpay.key_secret)
+    .update(body.toString())
+    .digest('hex');
+  
+  if (expectedSignature === razorpay_signature) {
+    db.run(`UPDATE users SET hasPaid = 1 WHERE id = ?`, [req.user.id], (err) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json({ success: true, message: 'Payment verified and user marked as paid' });
     });
+  } else {
+    res.status(400).json({ error: 'Invalid signature' });
+  }
 });
 
-// Get all users (admin only)
+// Admin: get all users
 app.get('/api/admin/users', authenticateToken, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
   db.all(`SELECT id, name, email, mobile, isAdmin, hasPaid, estimateCount, createdAt FROM users ORDER BY id`, (err, users) => {
@@ -180,14 +190,6 @@ app.get('/api/admin/export-users', authenticateToken, (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename=users.xlsx');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buffer);
-  });
-});
-
-// Get all estimates (admin only)
-app.get('/api/admin/estimates', authenticateToken, (req, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
-  db.all(`SELECT e.*, u.name as userName FROM estimates e LEFT JOIN users u ON e.userId = u.id ORDER BY e.createdAt DESC`, (err, estimates) => {
-    res.json(estimates);
   });
 });
 
