@@ -16,6 +16,6 @@
     "express-rate-limit": "^6.10.0",
     "helmet": "^7.0.0",
     "xlsx": "^0.18.5",
-    "nodemailer": "^6.9.7"
+    "razorpay": "^2.9.2"
   }
 }
