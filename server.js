@@ -6,17 +6,9 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const XLSX = require('xlsx');
-const Razorpay = require('razorpay');
-const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// 🔐 Razorpay Test Keys (yours)
-const razorpay = new Razorpay({
-  key_id: 'rzp_test_Sr6tfbGNPitjbs',
-  key_secret: 'dX9cO3WcKwVwUAuEiHkZ3zvy'
-});
 
 // Security middleware
 app.use(helmet());
@@ -42,7 +34,6 @@ db.serialize(() => {
     mobile TEXT UNIQUE,
     password TEXT NOT NULL,
     isAdmin INTEGER DEFAULT 0,
-    hasPaid INTEGER DEFAULT 0,
     estimateCount INTEGER DEFAULT 0,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
@@ -112,13 +103,13 @@ app.post('/api/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     const token = jwt.sign({ id: user.id, name: user.name, isAdmin: user.isAdmin }, JWT_SECRET);
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, mobile: user.mobile, isAdmin: user.isAdmin, hasPaid: user.hasPaid, estimateCount: user.estimateCount } });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, mobile: user.mobile, isAdmin: user.isAdmin, estimateCount: user.estimateCount } });
   });
 });
 
 // Get current user
 app.get('/api/me', authenticateToken, (req, res) => {
-  db.get(`SELECT id, name, email, mobile, isAdmin, hasPaid, estimateCount FROM users WHERE id = ?`, [req.user.id], (err, user) => {
+  db.get(`SELECT id, name, email, mobile, isAdmin, estimateCount FROM users WHERE id = ?`, [req.user.id], (err, user) => {
     res.json(user);
   });
 });
@@ -135,46 +126,10 @@ app.post('/api/estimate', authenticateToken, (req, res) => {
     });
 });
 
-// 🚀 Create Razorpay order
-app.post('/api/create-order', authenticateToken, async (req, res) => {
-  try {
-    const options = {
-      amount: 19900, // ₹199 in paise
-      currency: 'INR',
-      receipt: `receipt_${req.user.id}_${Date.now()}`,
-      payment_capture: 1
-    };
-    const order = await razorpay.orders.create(options);
-    res.json({ orderId: order.id, amount: order.amount, currency: order.currency });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to create order' });
-  }
-});
-
-// ✅ Verify payment and mark user as paid
-app.post('/api/verify-payment', authenticateToken, async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-  const body = razorpay_order_id + '|' + razorpay_payment_id;
-  const expectedSignature = crypto
-    .createHmac('sha256', razorpay.key_secret)
-    .update(body.toString())
-    .digest('hex');
-  
-  if (expectedSignature === razorpay_signature) {
-    db.run(`UPDATE users SET hasPaid = 1 WHERE id = ?`, [req.user.id], (err) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ success: true, message: 'Payment verified and user marked as paid' });
-    });
-  } else {
-    res.status(400).json({ error: 'Invalid signature' });
-  }
-});
-
 // Admin: get all users
 app.get('/api/admin/users', authenticateToken, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
-  db.all(`SELECT id, name, email, mobile, isAdmin, hasPaid, estimateCount, createdAt FROM users ORDER BY id`, (err, users) => {
+  db.all(`SELECT id, name, email, mobile, isAdmin, estimateCount, createdAt FROM users ORDER BY id`, (err, users) => {
     res.json(users);
   });
 });
@@ -182,7 +137,7 @@ app.get('/api/admin/users', authenticateToken, (req, res) => {
 // Export users to Excel
 app.get('/api/admin/export-users', authenticateToken, (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
-  db.all(`SELECT id, name, email, mobile, isAdmin, hasPaid, estimateCount, createdAt FROM users`, (err, users) => {
+  db.all(`SELECT id, name, email, mobile, isAdmin, estimateCount, createdAt FROM users`, (err, users) => {
     const ws = XLSX.utils.json_to_sheet(users);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Users');
