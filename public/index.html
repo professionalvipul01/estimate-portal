@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Estimate by Home | Free Construction Estimates</title>
+  <title>Estimate by Home | Mobile OTP Login</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -15,7 +15,7 @@
     .flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
     .logo { font-size: 1.5rem; font-weight: 700; }
     .secure-badge { background: rgba(255,255,255,0.2); padding: 0.3rem 1rem; border-radius: 50px; font-size: 0.8rem; }
-    .nav a { color: white; text-decoration: none; margin-left: 1.5rem; }
+    .nav a { color: white; text-decoration: none; margin-left: 1.5rem; cursor: pointer; }
     .card { background: white; border-radius: 1rem; padding: 1.8rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
     .card h2 { color: #0048d9; margin-bottom: 1rem; border-left: 4px solid #ffd966; padding-left: 1rem; }
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
@@ -25,8 +25,8 @@
     .btn { padding: 0.7rem 1.5rem; border: none; border-radius: 0.6rem; font-weight: 600; cursor: pointer; }
     .btn-primary { background: #0048d9; color: white; }
     .btn-success { background: #1f7b4d; color: white; }
-    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-    .modal-content { background: white; border-radius: 1rem; max-width: 450px; width: 90%; padding: 1.8rem; }
+    .btn-secondary { background: #6c757d; color: white; }
+    .login-box { background: #f8fafc; border-radius: 1rem; padding: 1.2rem; margin-bottom: 1rem; border: 1px solid #e2e8f0; }
     .trust-banner { background: #e6f0ff; border-radius: 1rem; padding: 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-around; flex-wrap: wrap; }
     .trust-item { display: flex; align-items: center; gap: 8px; color: #003bb5; }
     table { width: 100%; border-collapse: collapse; }
@@ -35,7 +35,7 @@
     @media (max-width: 768px) { .header { padding: 1rem; } }
     .text-center { text-align: center; }
     .mt-2 { margin-top: 0.5rem; }
-    .error { color: #c4452c; font-size: 0.8rem; margin-top: 0.3rem; }
+    .error { color: #c4452c; font-size: 0.8rem; }
   </style>
 </head>
 <body>
@@ -43,14 +43,11 @@
   <div class="header">
     <div class="container flex-between">
       <div class="logo"><i class="fas fa-home"></i> Estimate by Home</div>
-      <div class="secure-badge"><i class="fas fa-lock"></i> Free Estimates</div>
+      <div class="secure-badge"><i class="fas fa-lock"></i> OTP Secure Login</div>
       <div class="nav">
-        <span v-if="user">Welcome, {{ user.name }} <a href="#" @click.prevent="logout" style="color:#ffd966;">Logout</a></span>
-        <span v-else>
-          <a href="#" @click.prevent="showLogin=true">Login</a> | 
-          <a href="#" @click.prevent="showRegister=true">Register</a>
-        </span>
-        <a href="#" @click.prevent="showAdmin=true" v-if="user?.isAdmin">Admin</a>
+        <span v-if="user">Welcome, {{ user.name }} <a @click="logout" style="color:#ffd966;">Logout</a></span>
+        <span v-else>Not logged in</span>
+        <a @click="showAdminPanel = !showAdminPanel" v-if="user?.isAdmin">Admin</a>
       </div>
     </div>
   </div>
@@ -58,12 +55,37 @@
   <div class="container" style="padding: 2rem 1rem;">
     <div class="trust-banner">
       <div class="trust-item"><i class="fas fa-shield-alt"></i> Trusted Platform</div>
-      <div class="trust-item"><i class="fas fa-download"></i> Free PDF Download</div>
+      <div class="trust-item"><i class="fas fa-otp"></i> OTP Login via Mobile</div>
       <div class="trust-item"><i class="fas fa-headset"></i> 24/7 Support</div>
     </div>
 
-    <!-- Admin Panel (only visible to admin) -->
-    <div class="card" v-if="showAdmin && user?.isAdmin">
+    <!-- Login / OTP Section (visible when not logged in) -->
+    <div class="login-box" v-if="!user">
+      <h3><i class="fas fa-mobile-alt"></i> Login with Mobile & OTP</h3>
+      <div class="form-grid" style="grid-template-columns: 1fr auto;">
+        <div class="input-group">
+          <label>Mobile Number</label>
+          <input type="tel" v-model="mobile" placeholder="10-digit mobile" maxlength="10">
+        </div>
+        <div class="input-group" style="justify-content: flex-end;">
+          <button class="btn btn-secondary" @click="sendOTP" :disabled="otpSending">Send OTP</button>
+        </div>
+      </div>
+      <div class="form-grid" style="grid-template-columns: 1fr auto; margin-top: 1rem;">
+        <div class="input-group">
+          <label>Enter OTP</label>
+          <input type="text" v-model="otp" placeholder="6-digit OTP">
+        </div>
+        <div class="input-group" style="justify-content: flex-end;">
+          <button class="btn btn-primary" @click="verifyOTP" :disabled="verifying">Verify & Login</button>
+        </div>
+      </div>
+      <p class="error" v-if="loginError">{{ loginError }}</p>
+      <p style="font-size:0.7rem; margin-top:0.5rem;">Demo OTP will be shown in server logs (check Render logs). For testing, OTP is 123456 if you prefer.</p>
+    </div>
+
+    <!-- Admin Panel (only for admin user) -->
+    <div class="card" v-if="showAdminPanel && user?.isAdmin">
       <h2><i class="fas fa-database"></i> Admin Dashboard</h2>
       <button class="btn btn-primary" @click="exportUsers"><i class="fas fa-file-excel"></i> Export Users to Excel</button>
       <button class="btn btn-primary" style="margin-left:1rem;" @click="loadAdminData">Refresh</button>
@@ -71,14 +93,14 @@
         <table>
           <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>Estimates</th></tr></thead>
           <tbody>
-            <tr v-for="u in adminUsers" :key="u.id"><td>{{ u.id }}</td><td>{{ u.name }}</td><td>{{ u.email || '-' }}</td><td>{{ u.mobile || '-' }}</td><td>{{ u.estimateCount }}</td></tr>
+            <tr v-for="u in adminUsers" :key="u.id"><tr>{{ u.id }}</td><td>{{ u.name }}</td><td>{{ u.email || '-' }}</td><td>{{ u.mobile }}</td><td>{{ u.estimateCount }}</td></tr>
             <tr v-if="adminUsers.length===0"><td colspan="5" class="text-center">No users yet</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Estimate Form (always visible, enabled) -->
+    <!-- Estimate Form (always visible) -->
     <div class="card">
       <h2>🏗️ Construction Estimate Calculator</h2>
       <div class="form-grid">
@@ -90,10 +112,11 @@
         <div class="input-group"><label>No. of Floors</label><select v-model.number="form.noOfFloors"><option value="1">GF</option><option value="2">G+1</option><option value="3">G+2</option></select></div>
         <div class="input-group"><label>Rate per Sq.Ft. (₹)</label><input type="number" v-model.number="form.ratePerSqft"></div>
       </div>
-      <button class="btn btn-primary" style="margin-top:1rem;" @click="generateEstimate">Generate Estimate</button>
+      <button class="btn btn-primary" style="margin-top:1rem;" @click="generateEstimate" :disabled="!user">Generate Estimate</button>
+      <p v-if="!user" style="margin-top:0.5rem; color:#c4452c;"><i class="fas fa-info-circle"></i> Please login above to generate estimate</p>
     </div>
 
-    <!-- Result & PDF (only visible after calculation) -->
+    <!-- Result & PDF -->
     <div class="card" v-if="estimateResult !== null">
       <div id="estimateContent">
         <h3>📊 Estimate Summary</h3>
@@ -102,29 +125,6 @@
         <p><strong style="font-size:1.5rem; color:#0048d9;">Total: ₹{{ estimateResult.toLocaleString() }}</strong></p>
       </div>
       <button class="btn btn-success" @click="downloadPDF">📎 Download PDF (Free)</button>
-    </div>
-  </div>
-
-  <!-- Login Modal -->
-  <div class="modal" v-if="showLogin" @click.self="closeModals">
-    <div class="modal-content">
-      <h3>Login</h3>
-      <div class="input-group"><label>Email/Mobile</label><input v-model="loginCredential" placeholder="admin@estimate.com or mobile"></div>
-      <div class="input-group"><label>Password</label><input type="password" v-model="loginPassword"></div>
-      <button class="btn btn-primary" style="width:100%;" @click="login">Login</button>
-      <p class="text-center mt-2">New user? <a href="#" @click="showLogin=false; showRegister=true">Register</a></p>
-    </div>
-  </div>
-
-  <!-- Register Modal -->
-  <div class="modal" v-if="showRegister" @click.self="closeModals">
-    <div class="modal-content">
-      <h3>Create Account</h3>
-      <div class="input-group"><label>Full Name</label><input v-model="reg.name"></div>
-      <div class="input-group"><label>Email</label><input v-model="reg.email"></div>
-      <div class="input-group"><label>Mobile</label><input v-model="reg.mobile"></div>
-      <div class="input-group"><label>Password</label><input type="password" v-model="reg.password"></div>
-      <button class="btn btn-primary" style="width:100%;" @click="register">Register</button>
     </div>
   </div>
 </div>
@@ -138,12 +138,12 @@ new Vue({
   el: '#app',
   data: {
     user: null,
-    showLogin: false,
-    showRegister: false,
-    showAdmin: false,
-    loginCredential: '',
-    loginPassword: '',
-    reg: { name: '', email: '', mobile: '', password: '' },
+    mobile: '',
+    otp: '',
+    otpSending: false,
+    verifying: false,
+    loginError: '',
+    showAdminPanel: false,
     form: { clientName: '', address: '', landmark: '', lengthFt: 50, widthFt: 15, noOfFloors: 2, ratePerSqft: 1400 },
     estimateResult: null,
     builtUpArea: 0,
@@ -159,52 +159,71 @@ new Vue({
         else { localStorage.removeItem('token'); token = null; }
       } catch(e) { console.error(e); }
     },
-    async login() {
-      const res = await fetch(API + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential: this.loginCredential, password: this.loginPassword }) });
-      const data = await res.json();
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-        token = data.token;
-        this.user = data.user;
-        this.showLogin = false;
-        alert('Login successful!');
-        // After login, automatically generate estimate if form has data
-        if (this.form.clientName) this.calculateEstimate();
-      } else {
-        alert('Invalid credentials');
-      }
-    },
-    async register() {
-      if (!this.reg.name || (!this.reg.email && !this.reg.mobile) || !this.reg.password) {
-        alert('Please fill all required fields');
+    async sendOTP() {
+      if (!this.mobile || this.mobile.length !== 10) {
+        this.loginError = 'Enter a valid 10-digit mobile number';
         return;
       }
-      const res = await fetch(API + '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.reg) });
-      if (res.ok) {
-        alert('Registration successful! Please login.');
-        this.showRegister = false;
-        this.showLogin = true;
-      } else {
-        alert('User already exists or invalid data');
+      this.otpSending = true;
+      this.loginError = '';
+      try {
+        const res = await fetch(API + '/api/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mobile: this.mobile })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('OTP sent! Check server console or use 123456 for demo.');
+          // For demo convenience, auto-fill OTP 123456 if server prints it (you can hardcode 123456 for testing)
+          // In real deployment you'd rely on SMS.
+        } else {
+          this.loginError = data.error || 'Failed to send OTP';
+        }
+      } catch(e) { this.loginError = 'Server error'; }
+      this.otpSending = false;
+    },
+    async verifyOTP() {
+      if (!this.otp || this.otp.length < 4) {
+        this.loginError = 'Enter OTP';
+        return;
       }
+      this.verifying = true;
+      this.loginError = '';
+      try {
+        const res = await fetch(API + '/api/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mobile: this.mobile, otp: this.otp })
+        });
+        const data = await res.json();
+        if (data.token) {
+          localStorage.setItem('token', data.token);
+          token = data.token;
+          this.user = data.user;
+          this.mobile = '';
+          this.otp = '';
+          alert(`Welcome ${this.user.name}!`);
+        } else {
+          this.loginError = data.error || 'Invalid OTP';
+        }
+      } catch(e) { this.loginError = 'Server error'; }
+      this.verifying = false;
     },
     logout() {
       localStorage.removeItem('token');
       token = null;
       this.user = null;
       this.estimateResult = null;
-      this.showAdmin = false;
+      this.showAdminPanel = false;
+      this.adminUsers = [];
       alert('Logged out');
     },
     generateEstimate() {
       if (!this.user) {
-        // Show login modal and remember that user wanted to generate
-        this.showLogin = true;
+        alert('Please login first using mobile & OTP');
         return;
       }
-      this.calculateEstimate();
-    },
-    calculateEstimate() {
       const area = this.form.lengthFt * this.form.widthFt * this.form.noOfFloors;
       this.builtUpArea = area;
       this.estimateResult = Math.round(area * this.form.ratePerSqft * 0.83);
@@ -220,7 +239,7 @@ new Vue({
     },
     downloadPDF() {
       if (!this.user) {
-        this.showLogin = true;
+        alert('Please login first');
         return;
       }
       const element = document.getElementById('estimateContent');
@@ -236,10 +255,6 @@ new Vue({
     async loadAdminData() {
       const res = await fetch(API + '/api/admin/users', { headers: { 'Authorization': 'Bearer ' + token } });
       this.adminUsers = await res.json();
-    },
-    closeModals() {
-      this.showLogin = false;
-      this.showRegister = false;
     }
   }
 });
