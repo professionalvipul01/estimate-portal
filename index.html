@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estimate by Home | Trusted Construction Estimates</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #0048d9 0%, #003bb5 100%);
+      padding: 1rem 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      color: white;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+    .logo { font-size: 1.5rem; font-weight: 700; }
+    .secure-badge { background: rgba(255,255,255,0.2); padding: 0.3rem 1rem; border-radius: 50px; font-size: 0.8rem; }
+    .nav a { color: white; text-decoration: none; margin-left: 1.5rem; }
+    .card { background: white; border-radius: 1rem; padding: 1.8rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .card h2 { color: #0048d9; margin-bottom: 1rem; border-left: 4px solid #ffd966; padding-left: 1rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+    .input-group { display: flex; flex-direction: column; gap: 0.4rem; }
+    .input-group label { font-weight: 600; font-size: 0.8rem; color: #2c3e50; }
+    .input-group input, .input-group select { padding: 0.7rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; }
+    .btn { padding: 0.7rem 1.5rem; border: none; border-radius: 0.6rem; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #0048d9; color: white; }
+    .btn-success { background: #1f7b4d; color: white; }
+    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+    .modal-content { background: white; border-radius: 1rem; max-width: 450px; width: 90%; padding: 1.8rem; }
+    .hidden { display: none; }
+    .trust-banner { background: #e6f0ff; border-radius: 1rem; padding: 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-around; flex-wrap: wrap; }
+    .trust-item { display: flex; align-items: center; gap: 8px; color: #003bb5; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 0.7rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f8fafc; }
+    @media (max-width: 768px) { .header { padding: 1rem; } }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div class="container flex-between">
+      <div class="logo"><i class="fas fa-home"></i> Estimate by Home</div>
+      <div class="secure-badge"><i class="fas fa-lock"></i> 256-bit SSL Secure</div>
+      <div class="nav">
+        <a href="#" @click.prevent="showLogin=true" v-if="!user">Login</a>
+        <a href="#" @click.prevent="showRegister=true" v-if="!user">Register</a>
+        <span v-if="user">Welcome, {{ user.name }} <a href="#" @click.prevent="logout" style="color:#ffd966;">Logout</a></span>
+        <a href="#" @click.prevent="showAdmin=true" v-if="user?.isAdmin">Admin</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container" style="padding: 2rem 1rem;">
+    <div class="trust-banner">
+      <div class="trust-item"><i class="fas fa-shield-alt"></i> RBI Compliant</div>
+      <div class="trust-item"><i class="fas fa-undo-alt"></i> 100% Refund if failed</div>
+      <div class="trust-item"><i class="fas fa-headset"></i> 24/7 Support</div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div class="card" v-if="showAdmin && user?.isAdmin">
+      <h2><i class="fas fa-database"></i> Admin Dashboard</h2>
+      <button class="btn btn-primary" @click="exportUsers"><i class="fas fa-file-excel"></i> Export Users to Excel</button>
+      <button class="btn btn-primary" style="margin-left:1rem;" @click="loadAdminData">Refresh</button>
+      <div style="margin-top:1rem; overflow-x:auto;">
+        <table>
+          <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>Paid</th><th>Estimates</th></tr></thead>
+          <tbody>
+            <tr v-for="u in adminUsers" :key="u.id"><td>{{ u.id }}</td><td>{{ u.name }}</td><td>{{ u.email }}</td><td>{{ u.mobile }}</td><td>{{ u.hasPaid ? 'Yes' : 'No' }}</td><td>{{ u.estimateCount }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Estimate Form -->
+    <div class="card">
+      <h2>🏗️ Construction Estimate Calculator</h2>
+      <div class="form-grid">
+        <div class="input-group"><label>Client Name</label><input v-model="form.clientName" placeholder="Full name"></div>
+        <div class="input-group"><label>Address</label><input v-model="form.address"></div>
+        <div class="input-group"><label>Landmark</label><input v-model="form.landmark"></div>
+        <div class="input-group"><label>Length (ft)</label><input type="number" v-model.number="form.lengthFt"></div>
+        <div class="input-group"><label>Width (ft)</label><input type="number" v-model.number="form.widthFt"></div>
+        <div class="input-group"><label>No. of Floors</label><select v-model.number="form.noOfFloors"><option value="1">GF</option><option value="2">G+1</option><option value="3">G+2</option></select></div>
+        <div class="input-group"><label>Rate per Sq.Ft. (₹)</label><input type="number" v-model.number="form.ratePerSqft"></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:1rem;" @click="calculateEstimate" :disabled="!user">Generate Estimate</button>
+      <p v-if="!user" style="margin-top:0.5rem; color:#c4452c;">Please login to generate estimate</p>
+    </div>
+
+    <!-- Result -->
+    <div class="card" v-if="estimateResult">
+      <div id="estimateContent">
+        <h3>📊 Estimate Summary</h3>
+        <p><strong>Client:</strong> {{ form.clientName }}</p>
+        <p><strong>Built-up Area:</strong> {{ builtUpArea.toFixed(2) }} sq.ft</p>
+        <p><strong style="font-size:1.5rem; color:#0048d9;">Total: ₹{{ estimateResult.toLocaleString() }}</strong></p>
+      </div>
+      <button class="btn btn-success" @click="processPayment" :disabled="processing">💰 Pay ₹199 & Download PDF</button>
+      <button class="btn btn-primary" @click="downloadPDF" style="margin-left:0.5rem;">📎 Download PDF</button>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="modal" v-if="showLogin" @click.self="showLogin=false">
+    <div class="modal-content"><h3>Login</h3>
+      <div class="input-group"><label>Email/Mobile</label><input v-model="loginCredential"></div>
+      <div class="input-group"><label>Password</label><input type="password" v-model="loginPassword"></div>
+      <button class="btn btn-primary" style="width:100%;" @click="login">Login</button>
+      <p style="margin-top:1rem;">New user? <a href="#" @click="showLogin=false; showRegister=true">Register</a></p>
+    </div>
+  </div>
+
+  <!-- Register Modal -->
+  <div class="modal" v-if="showRegister" @click.self="showRegister=false">
+    <div class="modal-content"><h3>Create Account</h3>
+      <div class="input-group"><label>Full Name</label><input v-model="reg.name"></div>
+      <div class="input-group"><label>Email</label><input v-model="reg.email"></div>
+      <div class="input-group"><label>Mobile</label><input v-model="reg.mobile"></div>
+      <div class="input-group"><label>Password</label><input type="password" v-model="reg.password"></div>
+      <button class="btn btn-primary" style="width:100%;" @click="register">Register</button>
+    </div>
+  </div>
+
+  <!-- Exit Survey -->
+  <div class="modal" v-if="showExitSurvey" @click.self="showExitSurvey=false">
+    <div class="modal-content"><h3>Why did you stop?</h3>
+      <div class="input-group"><label>Reason</label><select v-model="exitReason"><option>Price too high</option><option>Technical issue</option><option>Payment failed</option><option>Just browsing</option></select></div>
+      <div class="input-group"><label>Feedback</label><textarea v-model="exitFeedback" rows="3"></textarea></div>
+      <button class="btn btn-primary" @click="submitExitSurvey">Submit & Claim Refund</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+<script>
+const API = window.location.origin;
+let token = localStorage.getItem('token');
+
+new Vue({
+  el: '#app',
+  data: {
+    user: null,
+    showLogin: false,
+    showRegister: false,
+    showAdmin: false,
+    showExitSurvey: false,
+    loginCredential: '',
+    loginPassword: '',
+    reg: { name: '', email: '', mobile: '', password: '' },
+    form: { clientName: '', address: '', landmark: '', lengthFt: 50, widthFt: 15, noOfFloors: 2, ratePerSqft: 1400 },
+    estimateResult: null,
+    builtUpArea: 0,
+    processing: false,
+    adminUsers: [],
+    exitReason: '',
+    exitFeedback: ''
+  },
+  mounted() { this.checkAuth(); },
+  methods: {
+    async checkAuth() {
+      if (!token) return;
+      try {
+        const res = await fetch(API + '/api/me', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (res.ok) this.user = await res.json();
+        else { localStorage.removeItem('token'); token = null; }
+      } catch(e) {}
+    },
+    async login() {
+      const res = await fetch(API + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential: this.loginCredential, password: this.loginPassword }) });
+      const data = await res.json();
+      if (data.token) { localStorage.setItem('token', data.token); token = data.token; this.user = data.user; this.showLogin = false; alert('Login successful!'); }
+      else alert('Invalid credentials');
+    },
+    async register() {
+      const res = await fetch(API + '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.reg) });
+      if (res.ok) { alert('Registration successful! Please login.'); this.showRegister = false; }
+      else alert('User already exists');
+    },
+    logout() { localStorage.removeItem('token'); token = null; this.user = null; this.estimateResult = null; this.showAdmin = false; },
+    calculateEstimate() {
+      const area = this.form.lengthFt * this.form.widthFt * this.form.noOfFloors;
+      this.builtUpArea = area;
+      this.estimateResult = Math.round(area * this.form.ratePerSqft * 0.83); // simplified
+      this.saveEstimate();
+    },
+    async saveEstimate() {
+      if (!this.user) return;
+      await fetch(API + '/api/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ ...this.form, totalAmount: this.estimateResult, builtUpArea: this.builtUpArea }) });
+    },
+    async processPayment() {
+      this.processing = true;
+      // Simulate payment - replace with Razorpay in production
+      setTimeout(async () => {
+        const success = Math.random() > 0.2;
+        if (success) {
+          await fetch(API + '/api/payment-success', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+          alert('Payment successful! PDF ready.');
+          this.user.hasPaid = 1;
+          this.downloadPDF();
+        } else {
+          this.showExitSurvey = true;
+          alert('Payment failed. You are eligible for refund.');
+        }
+        this.processing = false;
+      }, 1500);
+    },
+    downloadPDF() {
+      if (!this.user?.hasPaid && !this.user?.isAdmin) { alert('Please complete payment first'); return; }
+      const element = document.getElementById('estimateContent');
+      html2pdf().set({ filename: `Estimate_${this.form.clientName}.pdf` }).from(element).save();
+    },
+    async exportUsers() {
+      const res = await fetch(API + '/api/admin/export-users', { headers: { 'Authorization': 'Bearer ' + token } });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'users.xlsx'; a.click();
+    },
+    async loadAdminData() {
+      const res = await fetch(API + '/api/admin/users', { headers: { 'Authorization': 'Bearer ' + token } });
+      this.adminUsers = await res.json();
+    },
+    async submitExitSurvey() {
+      await fetch(API + '/api/exit-survey', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ reason: this.exitReason, feedback: this.exitFeedback, paymentFailed: true }) });
+      alert('Thank you! Refund initiated.');
+      this.showExitSurvey = false;
+    }
+  }
+});
+</script>
+</body>
+</html>
