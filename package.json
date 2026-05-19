@@ -1,7 +1,7 @@
 {
-  "name": "estimate-portal",
+  "name": "estimate-saas",
   "version": "1.0.0",
-  "description": "Construction Estimate Platform",
+  "description": "Construction Estimate Generator SaaS",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
