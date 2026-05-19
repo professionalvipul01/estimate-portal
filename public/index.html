@@ -3,128 +3,173 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Estimate by Home | Mobile OTP Login</title>
+  <title>Estimate by Home | OTP Login</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Inter', sans-serif; background: #f0f2f5; }
-    .header { background: linear-gradient(135deg, #0048d9 0%, #003bb5 100%); padding: 1rem 2rem; color: white; }
-    .container { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #e0e7ff 0%, #f0f2f5 100%);
+      min-height: 100vh;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem 1rem; }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #0048d9 0%, #003bb5 100%);
+      padding: 1rem 2rem;
+      color: white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
     .flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
     .logo { font-size: 1.5rem; font-weight: 700; }
     .secure-badge { background: rgba(255,255,255,0.2); padding: 0.3rem 1rem; border-radius: 50px; font-size: 0.8rem; }
     .nav a { color: white; text-decoration: none; margin-left: 1.5rem; cursor: pointer; }
-    .card { background: white; border-radius: 1rem; padding: 1.8rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-    .card h2 { color: #0048d9; margin-bottom: 1rem; border-left: 4px solid #ffd966; padding-left: 1rem; }
+    
+    /* Cards */
+    .card {
+      background: white;
+      border-radius: 1.5rem;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.02);
+    }
+    .login-card {
+      max-width: 450px;
+      margin: 2rem auto;
+      text-align: center;
+    }
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
-    .input-group { display: flex; flex-direction: column; gap: 0.4rem; }
+    .input-group { display: flex; flex-direction: column; gap: 0.4rem; text-align: left; }
     .input-group label { font-weight: 600; font-size: 0.8rem; color: #2c3e50; }
-    .input-group input, .input-group select { padding: 0.7rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; font-family: inherit; }
-    .btn { padding: 0.7rem 1.5rem; border: none; border-radius: 0.6rem; font-weight: 600; cursor: pointer; }
+    .input-group input, .input-group select {
+      padding: 0.75rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 0.8rem;
+      font-family: inherit;
+      font-size: 1rem;
+    }
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s;
+    }
     .btn-primary { background: #0048d9; color: white; }
+    .btn-primary:hover { background: #003bb5; transform: translateY(-1px); }
     .btn-success { background: #1f7b4d; color: white; }
     .btn-secondary { background: #6c757d; color: white; }
-    .login-box { background: #f8fafc; border-radius: 1rem; padding: 1.2rem; margin-bottom: 1rem; border: 1px solid #e2e8f0; }
-    .trust-banner { background: #e6f0ff; border-radius: 1rem; padding: 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-around; flex-wrap: wrap; }
+    .trust-banner {
+      background: #e6f0ff;
+      border-radius: 1rem;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
     .trust-item { display: flex; align-items: center; gap: 8px; color: #003bb5; }
-    table { width: 100%; border-collapse: collapse; }
+    .error { color: #c4452c; font-size: 0.8rem; margin-top: 0.5rem; }
+    .admin-panel table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
     th, td { padding: 0.7rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
     th { background: #f8fafc; }
-    @media (max-width: 768px) { .header { padding: 1rem; } }
-    .text-center { text-align: center; }
-    .mt-2 { margin-top: 0.5rem; }
-    .error { color: #c4452c; font-size: 0.8rem; }
+    @media (max-width: 640px) {
+      .container { padding: 1rem; }
+      .card { padding: 1.2rem; }
+    }
   </style>
 </head>
 <body>
 <div id="app">
   <div class="header">
-    <div class="container flex-between">
+    <div class="flex-between" style="max-width:1200px; margin:0 auto;">
       <div class="logo"><i class="fas fa-home"></i> Estimate by Home</div>
       <div class="secure-badge"><i class="fas fa-lock"></i> OTP Secure Login</div>
       <div class="nav">
-        <span v-if="user">Welcome, {{ user.name }} <a @click="logout" style="color:#ffd966;">Logout</a></span>
+        <span v-if="user">Hi, {{ user.name }} <a @click="logout" style="color:#ffd966;">Logout</a></span>
         <span v-else>Not logged in</span>
-        <a @click="showAdminPanel = !showAdminPanel" v-if="user?.isAdmin">Admin</a>
       </div>
     </div>
   </div>
 
-  <div class="container" style="padding: 2rem 1rem;">
+  <div class="container">
     <div class="trust-banner">
       <div class="trust-item"><i class="fas fa-shield-alt"></i> Trusted Platform</div>
       <div class="trust-item"><i class="fas fa-otp"></i> OTP Login via Mobile</div>
       <div class="trust-item"><i class="fas fa-headset"></i> 24/7 Support</div>
     </div>
 
-    <!-- Login / OTP Section (visible when not logged in) -->
-    <div class="login-box" v-if="!user">
-      <h3><i class="fas fa-mobile-alt"></i> Login with Mobile & OTP</h3>
-      <div class="form-grid" style="grid-template-columns: 1fr auto;">
-        <div class="input-group">
-          <label>Mobile Number</label>
-          <input type="tel" v-model="mobile" placeholder="10-digit mobile" maxlength="10">
-        </div>
-        <div class="input-group" style="justify-content: flex-end;">
-          <button class="btn btn-secondary" @click="sendOTP" :disabled="otpSending">Send OTP</button>
-        </div>
+    <!-- LOGIN SECTION (shown only when not logged in) -->
+    <div v-if="!user" class="card login-card">
+      <h2 style="margin-bottom: 1.5rem;"><i class="fas fa-mobile-alt"></i> Login with Mobile OTP</h2>
+      <div class="input-group" style="margin-bottom: 1rem;">
+        <label>Mobile Number</label>
+        <input type="tel" v-model="mobile" placeholder="10-digit mobile" maxlength="10" @keyup.enter="sendOTP">
       </div>
-      <div class="form-grid" style="grid-template-columns: 1fr auto; margin-top: 1rem;">
-        <div class="input-group">
-          <label>Enter OTP</label>
-          <input type="text" v-model="otp" placeholder="6-digit OTP">
-        </div>
-        <div class="input-group" style="justify-content: flex-end;">
-          <button class="btn btn-primary" @click="verifyOTP" :disabled="verifying">Verify & Login</button>
-        </div>
+      <button class="btn btn-primary" style="width:100%;" @click="sendOTP" :disabled="otpSending">
+        <i class="fas fa-paper-plane"></i> {{ otpSending ? 'Sending...' : 'Send OTP' }}
+      </button>
+      <div v-if="otpSent" class="input-group" style="margin-top: 1rem;">
+        <label>Enter OTP</label>
+        <input type="text" v-model="otp" placeholder="6-digit OTP" @keyup.enter="verifyOTP">
       </div>
-      <p class="error" v-if="loginError">{{ loginError }}</p>
-      <p style="font-size:0.7rem; margin-top:0.5rem;">Demo OTP will be shown in server logs (check Render logs). For testing, OTP is 123456 if you prefer.</p>
+      <button v-if="otpSent" class="btn btn-success" style="width:100%; margin-top: 1rem;" @click="verifyOTP" :disabled="verifying">
+        <i class="fas fa-check-circle"></i> {{ verifying ? 'Verifying...' : 'Verify & Login' }}
+      </button>
+      <p class="error">{{ loginError }}</p>
+      <p style="font-size:0.7rem; margin-top:1rem;">Demo: OTP appears in Render logs. For testing, you may use 123456.</p>
     </div>
 
-    <!-- Admin Panel (only for admin user) -->
-    <div class="card" v-if="showAdminPanel && user?.isAdmin">
-      <h2><i class="fas fa-database"></i> Admin Dashboard</h2>
-      <button class="btn btn-primary" @click="exportUsers"><i class="fas fa-file-excel"></i> Export Users to Excel</button>
-      <button class="btn btn-primary" style="margin-left:1rem;" @click="loadAdminData">Refresh</button>
-      <div style="margin-top:1rem; overflow-x:auto;">
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>Estimates</th></tr></thead>
-          <tbody>
-            <tr v-for="u in adminUsers" :key="u.id"><tr>{{ u.id }}</td><td>{{ u.name }}</td><td>{{ u.email || '-' }}</td><td>{{ u.mobile }}</td><td>{{ u.estimateCount }}</td></tr>
-            <tr v-if="adminUsers.length===0"><td colspan="5" class="text-center">No users yet</td></tr>
-          </tbody>
-        </table>
+    <!-- MAIN APP (shown only after login) -->
+    <div v-if="user">
+      <!-- Admin Panel (only for admin user) -->
+      <div class="card" v-if="user.isAdmin">
+        <h2><i class="fas fa-database"></i> Admin Dashboard</h2>
+        <button class="btn btn-primary" @click="exportUsers"><i class="fas fa-file-excel"></i> Export Users to Excel</button>
+        <button class="btn btn-secondary" style="margin-left:1rem;" @click="loadAdminData">Refresh</button>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>Estimates</th></tr></thead>
+            <tbody>
+              <tr v-for="u in adminUsers" :key="u.id">
+                <td>{{ u.id }}</td><td>{{ u.name }}</td><td>{{ u.email || '-' }}</td><td>{{ u.mobile }}</td><td>{{ u.estimateCount }}</td>
+              </tr>
+              <tr v-if="adminUsers.length===0"><td colspan="5">No users yet</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
 
-    <!-- Estimate Form (always visible) -->
-    <div class="card">
-      <h2>🏗️ Construction Estimate Calculator</h2>
-      <div class="form-grid">
-        <div class="input-group"><label>Client Name</label><input v-model="form.clientName" placeholder="Full name"></div>
-        <div class="input-group"><label>Address</label><input v-model="form.address"></div>
-        <div class="input-group"><label>Landmark</label><input v-model="form.landmark"></div>
-        <div class="input-group"><label>Length (ft)</label><input type="number" v-model.number="form.lengthFt"></div>
-        <div class="input-group"><label>Width (ft)</label><input type="number" v-model.number="form.widthFt"></div>
-        <div class="input-group"><label>No. of Floors</label><select v-model.number="form.noOfFloors"><option value="1">GF</option><option value="2">G+1</option><option value="3">G+2</option></select></div>
-        <div class="input-group"><label>Rate per Sq.Ft. (₹)</label><input type="number" v-model.number="form.ratePerSqft"></div>
+      <!-- Estimate Calculator -->
+      <div class="card">
+        <h2>🏗️ Construction Estimate Calculator</h2>
+        <div class="form-grid">
+          <div class="input-group"><label>Client Name</label><input v-model="form.clientName" placeholder="Full name"></div>
+          <div class="input-group"><label>Address</label><input v-model="form.address"></div>
+          <div class="input-group"><label>Landmark</label><input v-model="form.landmark"></div>
+          <div class="input-group"><label>Length (ft)</label><input type="number" v-model.number="form.lengthFt"></div>
+          <div class="input-group"><label>Width (ft)</label><input type="number" v-model.number="form.widthFt"></div>
+          <div class="input-group"><label>Floors</label><select v-model.number="form.noOfFloors"><option value="1">GF</option><option value="2">G+1</option><option value="3">G+2</option></select></div>
+          <div class="input-group"><label>Rate per Sq.Ft. (₹)</label><input type="number" v-model.number="form.ratePerSqft"></div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:1rem;" @click="generateEstimate">Generate Estimate</button>
       </div>
-      <button class="btn btn-primary" style="margin-top:1rem;" @click="generateEstimate" :disabled="!user">Generate Estimate</button>
-      <p v-if="!user" style="margin-top:0.5rem; color:#c4452c;"><i class="fas fa-info-circle"></i> Please login above to generate estimate</p>
-    </div>
 
-    <!-- Result & PDF -->
-    <div class="card" v-if="estimateResult !== null">
-      <div id="estimateContent">
-        <h3>📊 Estimate Summary</h3>
-        <p><strong>Client:</strong> {{ form.clientName || '—' }}</p>
-        <p><strong>Built-up Area:</strong> {{ builtUpArea.toFixed(2) }} sq.ft</p>
-        <p><strong style="font-size:1.5rem; color:#0048d9;">Total: ₹{{ estimateResult.toLocaleString() }}</strong></p>
+      <!-- Result & PDF -->
+      <div class="card" v-if="estimateResult !== null">
+        <div id="estimateContent">
+          <h3>📊 Estimate Summary</h3>
+          <p><strong>Client:</strong> {{ form.clientName || '—' }}</p>
+          <p><strong>Built-up Area:</strong> {{ builtUpArea.toFixed(2) }} sq.ft</p>
+          <p><strong style="font-size:1.5rem; color:#0048d9;">Total: ₹{{ estimateResult.toLocaleString() }}</strong></p>
+        </div>
+        <button class="btn btn-success" @click="downloadPDF">📎 Download PDF (Free)</button>
       </div>
-      <button class="btn btn-success" @click="downloadPDF">📎 Download PDF (Free)</button>
     </div>
   </div>
 </div>
@@ -142,8 +187,8 @@ new Vue({
     otp: '',
     otpSending: false,
     verifying: false,
+    otpSent: false,
     loginError: '',
-    showAdminPanel: false,
     form: { clientName: '', address: '', landmark: '', lengthFt: 50, widthFt: 15, noOfFloors: 2, ratePerSqft: 1400 },
     estimateResult: null,
     builtUpArea: 0,
@@ -155,8 +200,13 @@ new Vue({
       if (!token) return;
       try {
         const res = await fetch(API + '/api/me', { headers: { 'Authorization': 'Bearer ' + token } });
-        if (res.ok) this.user = await res.json();
-        else { localStorage.removeItem('token'); token = null; }
+        if (res.ok) {
+          this.user = await res.json();
+          if (this.user.isAdmin) this.loadAdminData();
+        } else {
+          localStorage.removeItem('token');
+          token = null;
+        }
       } catch(e) { console.error(e); }
     },
     async sendOTP() {
@@ -174,9 +224,8 @@ new Vue({
         });
         const data = await res.json();
         if (data.success) {
-          alert('OTP sent! Check server console or use 123456 for demo.');
-          // For demo convenience, auto-fill OTP 123456 if server prints it (you can hardcode 123456 for testing)
-          // In real deployment you'd rely on SMS.
+          this.otpSent = true;
+          alert('OTP sent! Check server console. For demo, you can use 123456.');
         } else {
           this.loginError = data.error || 'Failed to send OTP';
         }
@@ -203,7 +252,9 @@ new Vue({
           this.user = data.user;
           this.mobile = '';
           this.otp = '';
+          this.otpSent = false;
           alert(`Welcome ${this.user.name}!`);
+          if (this.user.isAdmin) this.loadAdminData();
         } else {
           this.loginError = data.error || 'Invalid OTP';
         }
@@ -215,22 +266,18 @@ new Vue({
       token = null;
       this.user = null;
       this.estimateResult = null;
-      this.showAdminPanel = false;
       this.adminUsers = [];
-      alert('Logged out');
+      this.otpSent = false;
+      this.mobile = '';
+      this.otp = '';
     },
     generateEstimate() {
-      if (!this.user) {
-        alert('Please login first using mobile & OTP');
-        return;
-      }
       const area = this.form.lengthFt * this.form.widthFt * this.form.noOfFloors;
       this.builtUpArea = area;
       this.estimateResult = Math.round(area * this.form.ratePerSqft * 0.83);
       this.saveEstimate();
     },
     async saveEstimate() {
-      if (!this.user) return;
       await fetch(API + '/api/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -238,10 +285,6 @@ new Vue({
       });
     },
     downloadPDF() {
-      if (!this.user) {
-        alert('Please login first');
-        return;
-      }
       const element = document.getElementById('estimateContent');
       html2pdf().set({ filename: `Estimate_${this.form.clientName || 'client'}.pdf` }).from(element).save();
     },
