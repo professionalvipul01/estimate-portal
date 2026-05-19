@@ -10,20 +10,14 @@ const XLSX = require('xlsx');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security middleware
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100
-});
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use('/api/', limiter);
 
-// Database setup
 const db = new sqlite3.Database('./database.db');
 
 db.serialize(() => {
@@ -54,11 +48,10 @@ db.serialize(() => {
     FOREIGN KEY(userId) REFERENCES users(id)
   )`);
   
-  // Insert default admin if not exists
   db.get(`SELECT * FROM users WHERE email = 'admin@estimate.com'`, (err, row) => {
     if (!row) {
       const hashedPassword = bcrypt.hashSync('admin123', 10);
-      db.run(`INSERT INTO users (name, email, password, isAdmin) VALUES (?, ?, ?, ?)`, 
+      db.run(`INSERT INTO users (name, email, password, isAdmin) VALUES (?, ?, ?, ?)`,
         ['Admin User', 'admin@estimate.com', hashedPassword, 1]);
     }
   });
@@ -66,7 +59,6 @@ db.serialize(() => {
 
 const JWT_SECRET = 'your-secret-key-change-this-in-production';
 
-// Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -78,10 +70,8 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// ============ API ROUTES ============
-
 // Register
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', (req, res) => {
   const { name, email, mobile, password } = req.body;
   if (!name || (!email && !mobile) || !password) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -148,6 +138,4 @@ app.get('/api/admin/export-users', authenticateToken, (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
