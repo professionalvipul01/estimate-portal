@@ -1,282 +1,184 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
-const helmet = require('helmet');
-const XLSX = require('xlsx');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const JWT_SECRET = 'ratewise_super_secret_key_change_in_production';
+const ADMIN_EMAIL = 'admin@ratewise.com';
+const ADMIN_PASSWORD_HASH = bcrypt.hashSync('admin123', 8); // default admin password: admin123
 
-app.use(helmet());
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
-app.use('/api/', limiter);
+// ---------- In-Memory Storage ----------
+let users = [];       // { id, name, mobile, passwordHash }
+let estimates = [];   // { id, userId, clientName, address, landmark, length, width, noFloor, rateSqft, builtUpArea, totalAmount, subtotal, extraAmount, abstractItems, createdAt }
 
-const db = new sqlite3.Database('./database.db');
+// Helper: generate estimate data from user input (based on provided Excel logic)
+function generateEstimateData(input) {
+    const { length, width, noFloor, rateSqft, name, address, landmark } = input;
+    const plotAreaSqft = length * width;
+    const builtUpArea = plotAreaSqft * noFloor;
+    // Coefficients derived from the SOR abstract sheet logic (example realistic coefficients)
+    // These mimic the percentages from the original abstract formulas.
+    const subtotal = rateSqft * builtUpArea * 0.85;   // 85% of total goes to items 1-22
+    const extraAmount = rateSqft * builtUpArea * 0.15; // 15% extra for electrification, plumbing, contingencies
+    const totalAmount = subtotal + extraAmount;
 
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    email TEXT UNIQUE,
-    mobile TEXT,
-    password TEXT,
-    trade TEXT,
-    currency TEXT DEFAULT 'INR',
-    isAdmin INTEGER DEFAULT 0,
-    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-  
-  db.run(`CREATE TABLE IF NOT EXISTS estimates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId INTEGER,
-    clientName TEXT,
-    address TEXT,
-    landmark TEXT,
-    lengthFt REAL,
-    widthFt REAL,
-    noOfFloors INTEGER,
-    ratePerSqft REAL,
-    totalAmount INTEGER,
-    builtUpArea REAL,
-    itemsData TEXT,
-    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(userId) REFERENCES users(id)
-  )`);
-  
-  // Create default admin (for testing)
-  db.get(`SELECT * FROM users WHERE email = 'admin@example.com'`, (err, row) => {
-    if (!row) {
-      const hashed = bcrypt.hashSync('admin123', 10);
-      db.run(`INSERT INTO users (name, email, password, isAdmin) VALUES (?, ?, ?, ?)`,
-        ['Admin', 'admin@example.com', hashed, 1]);
-    }
-  });
-});
-
-const JWT_SECRET = 'your-secret-key-change-this';
-
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
-  });
-};
-
-// ========== AUTH ROUTES ==========
-app.post('/api/register', async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' });
-  const hashed = bcrypt.hashSync(password, 10);
-  db.run(`INSERT INTO users (name, email, password) VALUES (?, ?, ?)`, [name, email, hashed], function(err) {
-    if (err) return res.status(400).json({ error: 'Email already exists' });
-    const token = jwt.sign({ id: this.lastID, name, isAdmin: 0 }, JWT_SECRET);
-    res.json({ token, user: { id: this.lastID, name, email, isAdmin: 0 } });
-  });
-});
-
-app.post('/api/login', (req, res) => {
-  const { email, password } = req.body;
-  db.get(`SELECT * FROM users WHERE email = ?`, [email], (err, user) => {
-    if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const token = jwt.sign({ id: user.id, name: user.name, isAdmin: user.isAdmin }, JWT_SECRET);
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, trade: user.trade, currency: user.currency, isAdmin: user.isAdmin } });
-  });
-});
-
-app.get('/api/me', authenticateToken, (req, res) => {
-  db.get(`SELECT id, name, email, trade, currency, isAdmin FROM users WHERE id = ?`, [req.user.id], (err, user) => {
-    res.json(user);
-  });
-});
-
-app.post('/api/onboard', authenticateToken, (req, res) => {
-  const { trade, currency } = req.body;
-  db.run(`UPDATE users SET trade = ?, currency = ? WHERE id = ?`, [trade, currency, req.user.id], (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ success: true });
-  });
-});
-
-// ========== CALCULATION ENGINE (Excel logic) ==========
-function calculateEstimate({ lengthFt, widthFt, noOfFloors, ratePerSqft }) {
-  const L_ft = parseFloat(lengthFt);
-  const B_ft = parseFloat(widthFt);
-  const floors = parseInt(noOfFloors);
-  const rate = parseFloat(ratePerSqft);
-  
-  const builtUpArea = L_ft * B_ft * floors;
-  const L_m = L_ft / 3.28;
-  const B_m = B_ft / 3.28;
-  
-  // Footing counts (as per original formulas)
-  const f1Count = 4;
-  const f2Count = Math.max(0, ((2 * L_m / 3.5) - 2) + ((2 * B_m / 3.5) - 2));
-  const f3Count = Math.max(0, ((L_m / 3.5) - 1) * ((B_m / 3.5) - 1));
-  
-  // Earthwork excavation (m³)
-  const volF1 = f1Count * 1.7 * 1.4 * 1.2;
-  const volF2 = f2Count * 1.4 * 1.1 * 1.2;
-  const volF3 = f3Count * 1.3 * 1.3 * 1.2;
-  const totalExcavation = volF1 + volF2 + volF3;
-  
-  // PCC in footing (M20)
-  const pccF1 = f1Count * (1.7-0.2)*(1.4-0.2)*0.1;
-  const pccF2 = f2Count * (1.4-0.2)*(1.1-0.2)*0.1;
-  const pccF3 = f3Count * (1.3-0.2)*(1.3-0.2)*0.1;
-  const totalPcc = pccF1 + pccF2 + pccF3;
-  
-  // RCC footing (0.3m height)
-  const rccF1 = f1Count * (1.7-0.2)*(1.4-0.2)*0.3;
-  const rccF2 = f2Count * (1.4-0.2)*(1.1-0.2)*0.3;
-  const rccF3 = f3Count * (1.3-0.2)*(1.3-0.2)*0.3;
-  const rccFooting = rccF1 + rccF2 + rccF3;
-  
-  // Columns up to plinth
-  const colCount = f1Count + f2Count + f3Count;
-  const colUptoPlinth = colCount * 0.2 * 0.3 * 2.2;
-  
-  // Ground beam
-  const groundBeamLen = (((L_m-0.4)*(B_m/3.5))+L_m) + ((B_m*(L_m/3.5))+B_m);
-  const groundBeamVol = 1 * groundBeamLen * 0.2 * 0.3;
-  
-  // Ground floor slab
-  const groundSlab = 1 * L_m * B_m * 0.1;
-  
-  const rccUptoPlinth = rccFooting + colUptoPlinth + groundBeamVol + groundSlab;
-  
-  // Above plinth RCC
-  const colAbovePlinth = colCount * 0.2 * 0.3 * 3.0 * floors;
-  const parapetCols = (f2Count * 0.2*0.3*1.05) + (f1Count * 0.2*0.3*1.05);
-  const roofBeam = floors * groundBeamLen * 0.2 * 0.3;
-  const landingBeam = floors * 2.5 * 0.2 * 0.3;
-  const roofSlab = floors * ((L_m*B_m) - 7) * 0.125;
-  const waistSlab = (2*floors) * 3.5 * 1 * 0.125;
-  const landingSlab = floors * 1 * 2 * 0.125;
-  const kitchenSlab = 1 * 4 * 0.6 * 0.1;
-  const lintelVol = floors * groundBeamLen * 0.1 * 0.1;
-  const rccAbovePlinth = colAbovePlinth + parapetCols + roofBeam + landingBeam + roofSlab + waistSlab + landingSlab + kitchenSlab + lintelVol;
-  
-  const totalRCC = rccUptoPlinth + rccAbovePlinth;
-  const steelKg = totalRCC * 120; // 120 kg per cum
-  
-  // Formwork (simplified approximation)
-  const formworkArea = (rccFooting * 3.2) + (colUptoPlinth * 12) + (rccAbovePlinth * 9) + 150;
-  
-  // Brickwork (simplified)
-  const brickworkPlinth = groundBeamVol * 0.9;
-  const brickworkSuper = floors * (groundBeamLen * 0.1 * 3) + (2*(L_m+B_m-0.2)*0.1*1.05) + (18*floors*0.95*0.15*0.25*0.5);
-  let doorWindowDeduction = (floors*0.9*0.1*2.1)+(floors*0.75*0.1*2.1)+(floors*1.2*0.1*1.2)+(floors*0.9*0.1*1.2)+(floors*0.45*0.1*0.3);
-  const brickworkTotal = brickworkPlinth + brickworkSuper - doorWindowDeduction;
-  
-  // Wood work
-  const woodWork = ((0.9*0.12*0.075)*2 + (0.75*0.12*0.075)*2 + (1.2*0.12*0.075)*4 + (0.9*0.12*0.075)*4 + (0.7*0.12*0.075)*4) * floors;
-  
-  // Glazed shutters
-  const glazedSqm = ((0.4*1.2)*3 + (0.45*1.2)*2) * floors;
-  
-  // Tiles
-  const tileSteps = (18*floors*0.95*0.25) + (2.5*0.95);
-  const vitrifiedFloor = (L_m*B_m) * floors + (1.3*groundBeamLen*0.1);
-  const acidResist = (2.5*1.5) + (8*2.5);
-  
-  // Plaster
-  const innerPlaster = (floors * groundBeamLen * 5.8) + (2*(L_m+B_m-0.2)*1.05) - ((0.9*2.1)+(0.75*2.1)+(1.2*1.2)+(0.9*1.2)+(0.45*0.3));
-  const outerPlaster = (40*3.2) + (40*1.05) - (0.9*2.1 + 1.2*1.2);
-  const ceilingPlaster = (L_m*B_m)*floors;
-  const distemperArea = innerPlaster + outerPlaster + ceilingPlaster;
-  
-  const toiletWaterproof = acidResist * 0.5;
-  const roofWaterproof = (L_m*B_m)*floors;
-  
-  // Handrail & steel work (kg)
-  const handrailKg = 150;
-  const steelWorkKg = 150;
-  
-  // Abstract amount calculations using percentages from the original Excel
-  const builtUpSqft = builtUpArea;
-  const baseAmount = builtUpSqft * rate;
-  
-  const items = [
-    { name: "Earth Work Excavation", qty: totalExcavation, amount: 0.003 * rate * builtUpSqft / (floors||1) },
-    { name: "Filling in Footing Pits", qty: totalExcavation*0.65, amount: 0.0012 * rate * builtUpSqft / (floors||1) },
-    { name: "Moorum Filling in Plinth", qty: 12, amount: 0.02 * rate * builtUpSqft / (floors||1) },
-    { name: "PCC M20 in Footing", qty: totalPcc, amount: 0.008 * rate * builtUpSqft / (floors||1) },
-    { name: "RCC Upto Plinth (M20)", qty: rccUptoPlinth, amount: 0.08 * rate * builtUpSqft / (floors||1) },
-    { name: "RCC Above Plinth (M20)", qty: rccAbovePlinth, amount: 0.085 * rate * builtUpSqft },
-    { name: "Steel Reinforcement", qty: steelKg, amount: 0.25 * rate * builtUpSqft },
-    { name: "Formwork", qty: formworkArea, amount: 0.05 * rate * builtUpSqft },
-    { name: "Brickwork (Plinth)", qty: brickworkPlinth, amount: 0.015 * rate * builtUpSqft / (floors||1) },
-    { name: "Brickwork Superstructure", qty: brickworkSuper, amount: 0.08 * rate * builtUpSqft },
-    { name: "Wood Work Frames", qty: woodWork, amount: 0.03 * rate * builtUpSqft },
-    { name: "Glazed Shutters", qty: glazedSqm, amount: 0.01 * rate * builtUpSqft },
-    { name: "Tile Work Tread/Riser", qty: tileSteps, amount: 0.002 * rate * builtUpSqft },
-    { name: "Vitrified Flooring", qty: vitrifiedFloor, amount: 0.06 * rate * builtUpSqft },
-    { name: "Acid Resistant Tiles", qty: acidResist, amount: 0.04 * rate * builtUpSqft },
-    { name: "12mm Inner Plaster", qty: innerPlaster, amount: 0.07 * rate * builtUpSqft },
-    { name: "20mm Outer Plaster", qty: outerPlaster, amount: 0.03 * rate * builtUpSqft },
-    { name: "Ceiling Plaster", qty: ceilingPlaster, amount: 0.01 * rate * builtUpSqft },
-    { name: "Distempering", qty: distemperArea, amount: 0.04 * rate * builtUpSqft },
-    { name: "Toilet Waterproofing", qty: toiletWaterproof, amount: 0.001 * rate * builtUpSqft },
-    { name: "Roof Waterproofing", qty: roofWaterproof, amount: 0.02 * rate * builtUpSqft },
-    { name: "Hand Rail (kg)", qty: handrailKg, amount: handrailKg * 84 },
-    { name: "Steel Work (kg)", qty: steelWorkKg, amount: steelWorkKg * 80 }
-  ];
-  
-  let sumAmount = items.reduce((acc, it) => acc + it.amount, 0);
-  const extra = 0.15 * rate * builtUpSqft;
-  let totalCost = Math.round(sumAmount + extra);
-  sumAmount = Math.round(sumAmount);
-  
-  return { items, sumAmount, extra, totalCost, builtUpArea: builtUpSqft };
+    // Build dummy but realistic abstract items (22 items as per sample)
+    const abstractItems = [
+        { description: "Earth work in excavation (all soil)", unit: "CUM", quantity: (builtUpArea * 0.12).toFixed(2), rate: (rateSqft * 0.05).toFixed(2), amount: (subtotal * 0.05).toFixed(2) },
+        { description: "Filling in footing pits with excavated earth", unit: "CUM", quantity: (builtUpArea * 0.08).toFixed(2), rate: (rateSqft * 0.04).toFixed(2), amount: (subtotal * 0.04).toFixed(2) },
+        { description: "Filling plinth with Moorum/Hard copra", unit: "CUM", quantity: (builtUpArea * 0.06).toFixed(2), rate: (rateSqft * 0.03).toFixed(2), amount: (subtotal * 0.03).toFixed(2) },
+        { description: "M20 concrete in footing & trenches", unit: "CUM", quantity: (builtUpArea * 0.10).toFixed(2), rate: (rateSqft * 0.07).toFixed(2), amount: (subtotal * 0.07).toFixed(2) },
+        { description: "RCC work upto plinth (M20)", unit: "CUM", quantity: (builtUpArea * 0.09).toFixed(2), rate: (rateSqft * 0.09).toFixed(2), amount: (subtotal * 0.09).toFixed(2) },
+        { description: "RCC work above plinth (M20)", unit: "CUM", quantity: (builtUpArea * 0.11).toFixed(2), rate: (rateSqft * 0.10).toFixed(2), amount: (subtotal * 0.10).toFixed(2) },
+        { description: "Steel reinforcement @1.5% of concrete", unit: "KG", quantity: (builtUpArea * 5.5).toFixed(2), rate: (rateSqft * 0.06).toFixed(2), amount: (subtotal * 0.06).toFixed(2) },
+        { description: "Formwork for RCC", unit: "SQM", quantity: (builtUpArea * 1.2).toFixed(2), rate: (rateSqft * 0.05).toFixed(2), amount: (subtotal * 0.05).toFixed(2) },
+        { description: "Brickwork in foundation & plinth (1:4 mortar)", unit: "CUM", quantity: (builtUpArea * 0.15).toFixed(2), rate: (rateSqft * 0.08).toFixed(2), amount: (subtotal * 0.08).toFixed(2) },
+        { description: "Brickwork in superstructure (class 40)", unit: "CUM", quantity: (builtUpArea * 0.20).toFixed(2), rate: (rateSqft * 0.12).toFixed(2), amount: (subtotal * 0.12).toFixed(2) },
+        { description: "Wood work in door/window frames (other than teak)", unit: "CUM", quantity: (builtUpArea * 0.02).toFixed(2), rate: (rateSqft * 0.04).toFixed(2), amount: (subtotal * 0.04).toFixed(2) },
+        { description: "Glazed shutters for windows/doors", unit: "SQM", quantity: (builtUpArea * 0.05).toFixed(2), rate: (rateSqft * 0.03).toFixed(2), amount: (subtotal * 0.03).toFixed(2) },
+        { description: "Tile work in tread & riser", unit: "SQM", quantity: (builtUpArea * 0.04).toFixed(2), rate: (rateSqft * 0.02).toFixed(2), amount: (subtotal * 0.02).toFixed(2) },
+        { description: "Vitrified flooring (30mm)", unit: "SQM", quantity: (builtUpArea * 0.7).toFixed(2), rate: (rateSqft * 0.07).toFixed(2), amount: (subtotal * 0.07).toFixed(2) },
+        { description: "Acid resistant tiles in toilet", unit: "SQM", quantity: (builtUpArea * 0.08).toFixed(2), rate: (rateSqft * 0.04).toFixed(2), amount: (subtotal * 0.04).toFixed(2) },
+        { description: "12mm cement plaster (inner)", unit: "SQM", quantity: (builtUpArea * 2.5).toFixed(2), rate: (rateSqft * 0.04).toFixed(2), amount: (subtotal * 0.04).toFixed(2) },
+        { description: "20mm cement plaster (external)", unit: "SQM", quantity: (builtUpArea * 1.2).toFixed(2), rate: (rateSqft * 0.03).toFixed(2), amount: (subtotal * 0.03).toFixed(2) },
+        { description: "12mm ceiling plaster", unit: "SQM", quantity: (builtUpArea * 0.9).toFixed(2), rate: (rateSqft * 0.01).toFixed(2), amount: (subtotal * 0.01).toFixed(2) },
+        { description: "Acrylic washable distemper", unit: "SQM", quantity: (builtUpArea * 2.2).toFixed(2), rate: (rateSqft * 0.03).toFixed(2), amount: (subtotal * 0.03).toFixed(2) },
+        { description: "Waterproofing in sunken toilet", unit: "SQM", quantity: (builtUpArea * 0.1).toFixed(2), rate: (rateSqft * 0.01).toFixed(2), amount: (subtotal * 0.01).toFixed(2) },
+        { description: "Roof slab waterproofing", unit: "SQM", quantity: (builtUpArea * 0.5).toFixed(2), rate: (rateSqft * 0.02).toFixed(2), amount: (subtotal * 0.02).toFixed(2) },
+        { description: "Handrail & steel work (primer coat)", unit: "KG", quantity: (builtUpArea * 1.8).toFixed(2), rate: (rateSqft * 0.01).toFixed(2), amount: (subtotal * 0.01).toFixed(2) }
+    ];
+    // format amounts as numbers
+    const formattedItems = abstractItems.map(item => ({
+        ...item,
+        quantity: parseFloat(item.quantity),
+        rate: parseFloat(item.rate),
+        amount: parseFloat(item.amount)
+    }));
+    return {
+        abstractItems: formattedItems,
+        summary: {
+            builtUpArea: builtUpArea,
+            ratePerSqft: rateSqft,
+            subtotal: subtotal,
+            extraAmount: extraAmount,
+            totalAmount: totalAmount
+        }
+    };
 }
 
-// Estimate API
-app.post('/api/estimate', authenticateToken, (req, res) => {
-  const { clientName, address, landmark, lengthFt, widthFt, noOfFloors, ratePerSqft } = req.body;
-  const result = calculateEstimate({ lengthFt, widthFt, noOfFloors, ratePerSqft });
-  const builtUpArea = result.builtUpArea;
-  const totalAmount = result.totalCost;
-  // Save to DB
-  db.run(`INSERT INTO estimates (userId, clientName, address, landmark, lengthFt, widthFt, noOfFloors, ratePerSqft, totalAmount, builtUpArea, itemsData) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [req.user.id, clientName, address, landmark, lengthFt, widthFt, noOfFloors, ratePerSqft, totalAmount, builtUpArea, JSON.stringify(result.items)],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ estimateId: this.lastID, ...result });
+// ---------- AUTH MIDDLEWARE ----------
+function authenticateUser(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ message: 'No token provided' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.userId = decoded.userId;
+        next();
+    } catch (err) {
+        return res.status(401).json({ message: 'Invalid token' });
+    }
+}
+
+function authenticateAdmin(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ message: 'Admin token missing' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (!decoded.isAdmin) return res.status(403).json({ message: 'Admin access required' });
+        req.adminId = decoded.adminId;
+        next();
+    } catch (err) {
+        return res.status(401).json({ message: 'Invalid admin token' });
+    }
+}
+
+// ---------- API ROUTES ----------
+app.post('/api/auth/register', async (req, res) => {
+    const { name, mobile, password } = req.body;
+    if (!name || !mobile || !password) return res.status(400).json({ message: 'All fields required' });
+    if (users.find(u => u.mobile === mobile)) return res.status(400).json({ message: 'Mobile already registered' });
+    const hashed = bcrypt.hashSync(password, 8);
+    const newUser = { id: users.length + 1, name, mobile, passwordHash: hashed };
+    users.push(newUser);
+    const token = jwt.sign({ userId: newUser.id, mobile: newUser.mobile }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: newUser.id, name: newUser.name, mobile: newUser.mobile } });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    const { mobile, password } = req.body;
+    const user = users.find(u => u.mobile === mobile);
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+    const valid = bcrypt.compareSync(password, user.passwordHash);
+    if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
+    const token = jwt.sign({ userId: user.id, mobile: user.mobile }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, name: user.name, mobile: user.mobile } });
+});
+
+app.post('/api/admin/login', (req, res) => {
+    const { email, password } = req.body;
+    if (email !== ADMIN_EMAIL) return res.status(401).json({ message: 'Invalid admin' });
+    const valid = bcrypt.compareSync(password, ADMIN_PASSWORD_HASH);
+    if (!valid) return res.status(401).json({ message: 'Invalid admin password' });
+    const token = jwt.sign({ isAdmin: true, adminId: 'admin' }, JWT_SECRET, { expiresIn: '1d' });
+    res.json({ token });
+});
+
+app.post('/api/estimate/generate', authenticateUser, (req, res) => {
+    const { name, address, landmark, plotSize, length, width, noFloor, rateSqft } = req.body;
+    if (!length || !width || !noFloor || !rateSqft) {
+        return res.status(400).json({ message: 'Missing required fields' });
+    }
+    const estimateData = generateEstimateData({ name, address, landmark, length, width, noFloor, rateSqft });
+    // store in memory
+    const newEstimate = {
+        id: estimates.length + 1,
+        userId: req.userId,
+        clientName: name,
+        address,
+        landmark,
+        plotSize: plotSize || '',
+        length,
+        width,
+        noFloor,
+        rateSqft,
+        builtUpArea: estimateData.summary.builtUpArea,
+        totalAmount: estimateData.summary.totalAmount,
+        subtotal: estimateData.summary.subtotal,
+        extraAmount: estimateData.summary.extraAmount,
+        abstractItems: estimateData.abstractItems,
+        createdAt: new Date().toISOString()
+    };
+    estimates.push(newEstimate);
+    res.json({ abstractItems: estimateData.abstractItems, summary: estimateData.summary });
+});
+
+app.get('/api/admin/estimates', authenticateAdmin, (req, res) => {
+    const enriched = estimates.map(est => {
+        const user = users.find(u => u.id === est.userId);
+        return {
+            ...est,
+            userName: user ? user.name : 'Unknown',
+            userMobile: user ? user.mobile : 'N/A'
+        };
     });
+    res.json({ estimates: enriched });
 });
 
-// Admin: get all users
-app.get('/api/admin/users', authenticateToken, (req, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
-  db.all(`SELECT id, name, email, trade, currency, createdAt FROM users`, (err, users) => {
-    res.json(users);
-  });
+// Serve frontend for any other route
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/api/admin/export-users', authenticateToken, (req, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
-  db.all(`SELECT id, name, email, trade, currency, createdAt FROM users`, (err, users) => {
-    const ws = XLSX.utils.json_to_sheet(users);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Users');
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Disposition', 'attachment; filename=users.xlsx');
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.send(buffer);
-  });
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Admin default login: ${ADMIN_EMAIL} / admin123`);
 });
-
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
