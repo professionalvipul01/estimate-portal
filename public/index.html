@@ -32,19 +32,21 @@
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
     .input-group { display: flex; flex-direction: column; gap: 0.4rem; }
     .input-group label { font-weight: 600; font-size: 0.8rem; color: #2c3e50; }
-    .input-group input, .input-group select { padding: 0.7rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; }
+    .input-group input, .input-group select { padding: 0.7rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; font-family: inherit; }
     .btn { padding: 0.7rem 1.5rem; border: none; border-radius: 0.6rem; font-weight: 600; cursor: pointer; }
     .btn-primary { background: #0048d9; color: white; }
     .btn-success { background: #1f7b4d; color: white; }
+    .btn-secondary { background: #6c757d; color: white; }
     .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
     .modal-content { background: white; border-radius: 1rem; max-width: 450px; width: 90%; padding: 1.8rem; }
-    .hidden { display: none; }
     .trust-banner { background: #e6f0ff; border-radius: 1rem; padding: 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-around; flex-wrap: wrap; }
     .trust-item { display: flex; align-items: center; gap: 8px; color: #003bb5; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 0.7rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
     th { background: #f8fafc; }
     @media (max-width: 768px) { .header { padding: 1rem; } }
+    .text-center { text-align: center; }
+    .mt-2 { margin-top: 0.5rem; }
   </style>
 </head>
 <body>
@@ -79,6 +81,7 @@
           <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>Paid</th><th>Estimates</th></tr></thead>
           <tbody>
             <tr v-for="u in adminUsers" :key="u.id"><td>{{ u.id }}</td><td>{{ u.name }}</td><td>{{ u.email }}</td><td>{{ u.mobile }}</td><td>{{ u.hasPaid ? 'Yes' : 'No' }}</td><td>{{ u.estimateCount }}</td></tr>
+            <tr v-if="adminUsers.length===0"><td colspan="6" class="text-center">No users yet</td></tr>
           </tbody>
         </table>
       </div>
@@ -97,7 +100,7 @@
         <div class="input-group"><label>Rate per Sq.Ft. (₹)</label><input type="number" v-model.number="form.ratePerSqft"></div>
       </div>
       <button class="btn btn-primary" style="margin-top:1rem;" @click="calculateEstimate" :disabled="!user">Generate Estimate</button>
-      <p v-if="!user" style="margin-top:0.5rem; color:#c4452c;">Please login to generate estimate</p>
+      <p v-if="!user" style="margin-top:0.5rem; color:#c4452c;"><i class="fas fa-info-circle"></i> Please login to generate estimate</p>
     </div>
 
     <!-- Result -->
@@ -116,10 +119,10 @@
   <!-- Login Modal -->
   <div class="modal" v-if="showLogin" @click.self="showLogin=false">
     <div class="modal-content"><h3>Login</h3>
-      <div class="input-group"><label>Email/Mobile</label><input v-model="loginCredential"></div>
+      <div class="input-group"><label>Email/Mobile</label><input v-model="loginCredential" placeholder="admin@estimate.com or mobile"></div>
       <div class="input-group"><label>Password</label><input type="password" v-model="loginPassword"></div>
       <button class="btn btn-primary" style="width:100%;" @click="login">Login</button>
-      <p style="margin-top:1rem;">New user? <a href="#" @click="showLogin=false; showRegister=true">Register</a></p>
+      <p class="text-center mt-2">New user? <a href="#" @click="showLogin=false; showRegister=true">Register</a></p>
     </div>
   </div>
 
@@ -134,12 +137,24 @@
     </div>
   </div>
 
-  <!-- Exit Survey -->
-  <div class="modal" v-if="showExitSurvey" @click.self="showExitSurvey=false">
-    <div class="modal-content"><h3>Why did you stop?</h3>
-      <div class="input-group"><label>Reason</label><select v-model="exitReason"><option>Price too high</option><option>Technical issue</option><option>Payment failed</option><option>Just browsing</option></select></div>
-      <div class="input-group"><label>Feedback</label><textarea v-model="exitFeedback" rows="3"></textarea></div>
-      <button class="btn btn-primary" @click="submitExitSurvey">Submit & Claim Refund</button>
+  <!-- Exit Survey Modal (only shows after payment failure, once per session) -->
+  <div class="modal" v-if="showExitSurvey" @click.self="closeExitSurvey">
+    <div class="modal-content">
+      <h3>🔁 Why did you stop?</h3>
+      <p style="margin: 0.5rem 0; font-size:0.9rem;">We noticed your payment didn't complete. Help us improve (you'll get a refund).</p>
+      <div class="input-group"><label>Reason</label>
+        <select v-model="exitReason">
+          <option value="">Select a reason</option>
+          <option>Price too high</option>
+          <option>Technical issue</option>
+          <option>Payment failed (my bank)</option>
+          <option>Just browsing</option>
+          <option>Found better option</option>
+        </select>
+      </div>
+      <div class="input-group"><label>Feedback (optional)</label><textarea v-model="exitFeedback" rows="3" placeholder="Tell us more..."></textarea></div>
+      <button class="btn btn-primary" style="width:100%;" @click="submitExitSurvey">✅ Submit & Claim Refund</button>
+      <button class="btn btn-secondary" style="width:100%; margin-top:0.5rem;" @click="closeExitSurvey">❌ Close (No refund)</button>
     </div>
   </div>
 </div>
@@ -148,6 +163,7 @@
 <script>
 const API = window.location.origin;
 let token = localStorage.getItem('token');
+let exitSurveyShown = false; // Prevents multiple popups
 
 new Vue({
   el: '#app',
@@ -185,15 +201,19 @@ new Vue({
       else alert('Invalid credentials');
     },
     async register() {
+      if (!this.reg.name || (!this.reg.email && !this.reg.mobile) || !this.reg.password) {
+        alert('Please fill all required fields'); return;
+      }
       const res = await fetch(API + '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.reg) });
       if (res.ok) { alert('Registration successful! Please login.'); this.showRegister = false; }
-      else alert('User already exists');
+      else alert('User already exists or invalid data');
     },
-    logout() { localStorage.removeItem('token'); token = null; this.user = null; this.estimateResult = null; this.showAdmin = false; },
+    logout() { localStorage.removeItem('token'); token = null; this.user = null; this.estimateResult = null; this.showAdmin = false; this.showExitSurvey = false; exitSurveyShown = false; },
     calculateEstimate() {
+      if (!this.user) { alert('Please login first'); return; }
       const area = this.form.lengthFt * this.form.widthFt * this.form.noOfFloors;
       this.builtUpArea = area;
-      this.estimateResult = Math.round(area * this.form.ratePerSqft * 0.83); // simplified
+      this.estimateResult = Math.round(area * this.form.ratePerSqft * 0.83);
       this.saveEstimate();
     },
     async saveEstimate() {
@@ -201,18 +221,22 @@ new Vue({
       await fetch(API + '/api/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ ...this.form, totalAmount: this.estimateResult, builtUpArea: this.builtUpArea }) });
     },
     async processPayment() {
+      if (!this.user) { alert('Please login'); return; }
       this.processing = true;
-      // Simulate payment - replace with Razorpay in production
+      // Simulate payment (80% success, 20% failure)
       setTimeout(async () => {
         const success = Math.random() > 0.2;
         if (success) {
           await fetch(API + '/api/payment-success', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
-          alert('Payment successful! PDF ready.');
+          alert('✅ Payment successful! PDF ready.');
           this.user.hasPaid = 1;
           this.downloadPDF();
         } else {
-          this.showExitSurvey = true;
-          alert('Payment failed. You are eligible for refund.');
+          alert('❌ Payment failed. You are eligible for a refund.');
+          if (!exitSurveyShown) {
+            this.showExitSurvey = true;
+            exitSurveyShown = true;
+          }
         }
         this.processing = false;
       }, 1500);
@@ -220,13 +244,14 @@ new Vue({
     downloadPDF() {
       if (!this.user?.hasPaid && !this.user?.isAdmin) { alert('Please complete payment first'); return; }
       const element = document.getElementById('estimateContent');
-      html2pdf().set({ filename: `Estimate_${this.form.clientName}.pdf` }).from(element).save();
+      html2pdf().set({ filename: `Estimate_${this.form.clientName || 'client'}.pdf` }).from(element).save();
     },
     async exportUsers() {
       const res = await fetch(API + '/api/admin/export-users', { headers: { 'Authorization': 'Bearer ' + token } });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = 'users.xlsx'; a.click();
+      URL.revokeObjectURL(url);
     },
     async loadAdminData() {
       const res = await fetch(API + '/api/admin/users', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -234,8 +259,13 @@ new Vue({
     },
     async submitExitSurvey() {
       await fetch(API + '/api/exit-survey', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ reason: this.exitReason, feedback: this.exitFeedback, paymentFailed: true }) });
-      alert('Thank you! Refund initiated.');
+      alert('Thank you! Refund of ₹199 has been initiated. It will reflect in 3-5 days.');
+      this.closeExitSurvey();
+    },
+    closeExitSurvey() {
       this.showExitSurvey = false;
+      this.exitReason = '';
+      this.exitFeedback = '';
     }
   }
 });
