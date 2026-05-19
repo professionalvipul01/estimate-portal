@@ -21,7 +21,7 @@
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
     .input-group { display: flex; flex-direction: column; gap: 0.4rem; }
     .input-group label { font-weight: 600; font-size: 0.8rem; color: #2c3e50; }
-    .input-group input, .input-group select { padding: 0.7rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; }
+    .input-group input, .input-group select { padding: 0.7rem; border: 1px solid #cbd5e1; border-radius: 0.6rem; font-family: inherit; }
     .btn { padding: 0.7rem 1.5rem; border: none; border-radius: 0.6rem; font-weight: 600; cursor: pointer; }
     .btn-primary { background: #0048d9; color: white; }
     .btn-success { background: #1f7b4d; color: white; }
@@ -35,6 +35,7 @@
     @media (max-width: 768px) { .header { padding: 1rem; } }
     .text-center { text-align: center; }
     .mt-2 { margin-top: 0.5rem; }
+    .error { color: #c4452c; font-size: 0.8rem; margin-top: 0.3rem; }
   </style>
 </head>
 <body>
@@ -44,9 +45,11 @@
       <div class="logo"><i class="fas fa-home"></i> Estimate by Home</div>
       <div class="secure-badge"><i class="fas fa-lock"></i> Free Estimates</div>
       <div class="nav">
-        <a href="#" @click.prevent="showLogin=true" v-if="!user">Login</a>
-        <a href="#" @click.prevent="showRegister=true" v-if="!user">Register</a>
         <span v-if="user">Welcome, {{ user.name }} <a href="#" @click.prevent="logout" style="color:#ffd966;">Logout</a></span>
+        <span v-else>
+          <a href="#" @click.prevent="showLogin=true">Login</a> | 
+          <a href="#" @click.prevent="showRegister=true">Register</a>
+        </span>
         <a href="#" @click.prevent="showAdmin=true" v-if="user?.isAdmin">Admin</a>
       </div>
     </div>
@@ -59,7 +62,7 @@
       <div class="trust-item"><i class="fas fa-headset"></i> 24/7 Support</div>
     </div>
 
-    <!-- Admin Panel -->
+    <!-- Admin Panel (only visible to admin) -->
     <div class="card" v-if="showAdmin && user?.isAdmin">
       <h2><i class="fas fa-database"></i> Admin Dashboard</h2>
       <button class="btn btn-primary" @click="exportUsers"><i class="fas fa-file-excel"></i> Export Users to Excel</button>
@@ -75,7 +78,7 @@
       </div>
     </div>
 
-    <!-- Estimate Form -->
+    <!-- Estimate Form (always visible, enabled) -->
     <div class="card">
       <h2>🏗️ Construction Estimate Calculator</h2>
       <div class="form-grid">
@@ -87,15 +90,14 @@
         <div class="input-group"><label>No. of Floors</label><select v-model.number="form.noOfFloors"><option value="1">GF</option><option value="2">G+1</option><option value="3">G+2</option></select></div>
         <div class="input-group"><label>Rate per Sq.Ft. (₹)</label><input type="number" v-model.number="form.ratePerSqft"></div>
       </div>
-      <button class="btn btn-primary" style="margin-top:1rem;" @click="calculateEstimate" :disabled="!user">Generate Estimate</button>
-      <p v-if="!user" style="margin-top:0.5rem; color:#c4452c;"><i class="fas fa-info-circle"></i> Please login to generate estimate</p>
+      <button class="btn btn-primary" style="margin-top:1rem;" @click="generateEstimate">Generate Estimate</button>
     </div>
 
-    <!-- Result & Free PDF -->
-    <div class="card" v-if="estimateResult">
+    <!-- Result & PDF (only visible after calculation) -->
+    <div class="card" v-if="estimateResult !== null">
       <div id="estimateContent">
         <h3>📊 Estimate Summary</h3>
-        <p><strong>Client:</strong> {{ form.clientName }}</p>
+        <p><strong>Client:</strong> {{ form.clientName || '—' }}</p>
         <p><strong>Built-up Area:</strong> {{ builtUpArea.toFixed(2) }} sq.ft</p>
         <p><strong style="font-size:1.5rem; color:#0048d9;">Total: ₹{{ estimateResult.toLocaleString() }}</strong></p>
       </div>
@@ -104,8 +106,9 @@
   </div>
 
   <!-- Login Modal -->
-  <div class="modal" v-if="showLogin" @click.self="showLogin=false">
-    <div class="modal-content"><h3>Login</h3>
+  <div class="modal" v-if="showLogin" @click.self="closeModals">
+    <div class="modal-content">
+      <h3>Login</h3>
       <div class="input-group"><label>Email/Mobile</label><input v-model="loginCredential" placeholder="admin@estimate.com or mobile"></div>
       <div class="input-group"><label>Password</label><input type="password" v-model="loginPassword"></div>
       <button class="btn btn-primary" style="width:100%;" @click="login">Login</button>
@@ -114,8 +117,9 @@
   </div>
 
   <!-- Register Modal -->
-  <div class="modal" v-if="showRegister" @click.self="showRegister=false">
-    <div class="modal-content"><h3>Create Account</h3>
+  <div class="modal" v-if="showRegister" @click.self="closeModals">
+    <div class="modal-content">
+      <h3>Create Account</h3>
       <div class="input-group"><label>Full Name</label><input v-model="reg.name"></div>
       <div class="input-group"><label>Email</label><input v-model="reg.email"></div>
       <div class="input-group"><label>Mobile</label><input v-model="reg.mobile"></div>
@@ -158,20 +162,49 @@ new Vue({
     async login() {
       const res = await fetch(API + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential: this.loginCredential, password: this.loginPassword }) });
       const data = await res.json();
-      if (data.token) { localStorage.setItem('token', data.token); token = data.token; this.user = data.user; this.showLogin = false; alert('Login successful!'); }
-      else alert('Invalid credentials');
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        token = data.token;
+        this.user = data.user;
+        this.showLogin = false;
+        alert('Login successful!');
+        // After login, automatically generate estimate if form has data
+        if (this.form.clientName) this.calculateEstimate();
+      } else {
+        alert('Invalid credentials');
+      }
     },
     async register() {
       if (!this.reg.name || (!this.reg.email && !this.reg.mobile) || !this.reg.password) {
-        alert('Please fill all required fields'); return;
+        alert('Please fill all required fields');
+        return;
       }
       const res = await fetch(API + '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.reg) });
-      if (res.ok) { alert('Registration successful! Please login.'); this.showRegister = false; }
-      else alert('User already exists or invalid data');
+      if (res.ok) {
+        alert('Registration successful! Please login.');
+        this.showRegister = false;
+        this.showLogin = true;
+      } else {
+        alert('User already exists or invalid data');
+      }
     },
-    logout() { localStorage.removeItem('token'); token = null; this.user = null; this.estimateResult = null; this.showAdmin = false; },
+    logout() {
+      localStorage.removeItem('token');
+      token = null;
+      this.user = null;
+      this.estimateResult = null;
+      this.showAdmin = false;
+      alert('Logged out');
+    },
+    generateEstimate() {
+      if (!this.user) {
+        // Show login modal and remember that user wanted to generate
+        this.showLogin = true;
+        return;
+      }
+      this.calculateEstimate();
+    },
     calculateEstimate() {
-      if (!this.user) { alert('Please login first'); return; }
       const area = this.form.lengthFt * this.form.widthFt * this.form.noOfFloors;
       this.builtUpArea = area;
       this.estimateResult = Math.round(area * this.form.ratePerSqft * 0.83);
@@ -179,9 +212,17 @@ new Vue({
     },
     async saveEstimate() {
       if (!this.user) return;
-      await fetch(API + '/api/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ ...this.form, totalAmount: this.estimateResult, builtUpArea: this.builtUpArea }) });
+      await fetch(API + '/api/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ ...this.form, totalAmount: this.estimateResult, builtUpArea: this.builtUpArea })
+      });
     },
     downloadPDF() {
+      if (!this.user) {
+        this.showLogin = true;
+        return;
+      }
       const element = document.getElementById('estimateContent');
       html2pdf().set({ filename: `Estimate_${this.form.clientName || 'client'}.pdf` }).from(element).save();
     },
@@ -195,6 +236,10 @@ new Vue({
     async loadAdminData() {
       const res = await fetch(API + '/api/admin/users', { headers: { 'Authorization': 'Bearer ' + token } });
       this.adminUsers = await res.json();
+    },
+    closeModals() {
+      this.showLogin = false;
+      this.showRegister = false;
     }
   }
 });
